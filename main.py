@@ -253,6 +253,45 @@ def check_daily_bonus(user_id):
         return True
     return False
 
+# NEW: Get all users for broadcast
+def get_all_users():
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT user_id FROM users')
+    users = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return users
+
+# NEW: Get user stats for admin
+def get_user_stats():
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT COUNT(*) FROM users')
+    total_users = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM users WHERE channels_joined = TRUE')
+    joined_users = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT SUM(points) FROM users')
+    total_points = cursor.fetchone()[0] or 0
+    
+    cursor.execute('SELECT SUM(total_searches) FROM users')
+    total_searches = cursor.fetchone()[0] or 0
+    
+    cursor.execute('SELECT COUNT(*) FROM search_logs')
+    total_logs = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    return {
+        'total_users': total_users,
+        'joined_users': joined_users,
+        'total_points': total_points,
+        'total_searches': total_searches,
+        'total_logs': total_logs
+    }
+
 # Redeem code functions
 def create_redeem_code(points, created_by):
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
@@ -541,6 +580,175 @@ async def process_number(chat_id: int, number_type: str, number: str, context: C
             reply_markup=reply_markup
         )
 
+# ---------- NEW BROADCAST COMMAND ----------
+async def broadcast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    # Admin check
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("❌ Admin only command.")
+        return
+        
+    if not context.args:
+        await update.message.reply_text(
+            "📢 <b>Broadcast Command</b>\n\n"
+            "Usage: <code>/broadcast your message here</code>\n\n"
+            "Example: <code>/broadcast Hello users! New features added!</code>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+        
+    message_text = ' '.join(context.args)
+    all_users = get_all_users()
+    
+    if not all_users:
+        await update.message.reply_text("❌ No users found in database.")
+        return
+        
+    # Confirmation message
+    confirm_msg = await update.message.reply_text(
+        f"📢 <b>Broadcast Confirmation</b>\n\n"
+        f"📝 <b>Message:</b> {message_text}\n\n"
+        f"👥 <b>Total Users:</b> {len(all_users)}\n\n"
+        f"⚠️ <b>Are you sure you want to send this broadcast?</b>\n"
+        f"Reply with 'YES' to confirm or 'NO' to cancel.",
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Store broadcast data in context for confirmation
+    context.user_data['pending_broadcast'] = {
+        'message': message_text,
+        'users': all_users,
+        'confirm_msg_id': confirm_msg.message_id
+    }
+
+# Broadcast confirmation handler
+async def broadcast_confirmation_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    if user_id not in ADMIN_IDS:
+        return
+        
+    pending_broadcast = context.user_data.get('pending_broadcast')
+    if not pending_broadcast:
+        return
+        
+    user_response = update.message.text.strip().upper()
+    
+    if user_response == 'YES':
+        message_text = pending_broadcast['message']
+        all_users = pending_broadcast['users']
+        
+        # Delete confirmation message
+        try:
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=pending_broadcast['confirm_msg_id']
+            )
+        except:
+            pass
+            
+        # Start broadcast
+        progress_msg = await update.message.reply_text(
+            f"🔄 <b>Starting Broadcast...</b>\n\n"
+            f"📤 Sent: 0/{len(all_users)}\n"
+            f"✅ Successful: 0\n"
+            f"❌ Failed: 0",
+            parse_mode=ParseMode.HTML
+        )
+        
+        successful = 0
+        failed = 0
+        
+        for index, user_id in enumerate(all_users, 1):
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"📢 <b>Announcement from Admin</b>\n\n{message_text}\n\n{DEVELOPER_TAG}",
+                    parse_mode=ParseMode.HTML
+                )
+                successful += 1
+            except Exception as e:
+                failed += 1
+                
+            # Update progress every 10 messages
+            if index % 10 == 0 or index == len(all_users):
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=update.effective_chat.id,
+                        message_id=progress_msg.message_id,
+                        text=f"🔄 <b>Broadcast Progress</b>\n\n"
+                             f"📤 Sent: {index}/{len(all_users)}\n"
+                             f"✅ Successful: {successful}\n"
+                             f"❌ Failed: {failed}",
+                        parse_mode=ParseMode.HTML
+                    )
+                except:
+                    pass
+                    
+            # Small delay to avoid rate limits
+            await asyncio.sleep(0.1)
+            
+        # Final result
+        await context.bot.edit_message_text(
+            chat_id=update.effective_chat.id,
+            message_id=progress_msg.message_id,
+            text=f"✅ <b>Broadcast Completed!</b>\n\n"
+                 f"📊 <b>Final Results:</b>\n"
+                 f"• Total Users: {len(all_users)}\n"
+                 f"• ✅ Successful: {successful}\n"
+                 f"• ❌ Failed: {failed}\n"
+                 f"• 📊 Success Rate: {(successful/len(all_users))*100:.1f}%",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Log broadcast
+        broadcast_log = f"📢 <b>Broadcast Sent</b>\n\n"
+        broadcast_log += f"👤 <b>Admin:</b> {update.effective_user.first_name}\n"
+        broadcast_log += f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+        broadcast_log += f"📝 <b>Message:</b> {message_text[:100]}...\n"
+        broadcast_log += f"📊 <b>Stats:</b> {successful}✅ {failed}❌\n"
+        broadcast_log += f"⏰ <b>Time:</b> {datetime.now().strftime('%H:%M:%S')}"
+        
+        await send_log_to_group(context, broadcast_log)
+        
+    elif user_response == 'NO':
+        await update.message.reply_text("❌ Broadcast cancelled.")
+    else:
+        await update.message.reply_text("❌ Please reply with 'YES' to confirm or 'NO' to cancel.")
+        
+    # Clear pending broadcast
+    context.user_data.pop('pending_broadcast', None)
+
+# NEW: Admin stats command
+async def admin_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("❌ Admin only command.")
+        return
+        
+    stats = get_user_stats()
+    
+    stats_text = f"📊 <b>Bot Statistics</b>\n\n"
+    stats_text += f"👥 <b>Total Users:</b> {stats['total_users']}\n"
+    stats_text += f"✅ <b>Joined Channels:</b> {stats['joined_users']}\n"
+    stats_text += f"💎 <b>Total Points Distributed:</b> {stats['total_points']}\n"
+    stats_text += f"🔍 <b>Total Searches:</b> {stats['total_searches']}\n"
+    stats_text += f"📝 <b>Search Logs:</b> {stats['total_logs']}\n\n"
+    
+    # Active users (last 7 days)
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+    cursor.execute('SELECT COUNT(DISTINCT user_id) FROM search_logs WHERE timestamp > ?', (week_ago,))
+    active_users = cursor.fetchone()[0]
+    conn.close()
+    
+    stats_text += f"🎯 <b>Active Users (7 days):</b> {active_users}"
+    
+    await update.message.reply_text(stats_text, parse_mode=ParseMode.HTML)
+
 # ---------- handlers ----------
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -702,6 +910,11 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = (update.message.text or "").strip()
     
+    # Check for broadcast confirmation
+    if user_id in ADMIN_IDS and context.user_data.get('pending_broadcast'):
+        await broadcast_confirmation_handler(update, context)
+        return
+    
     if user_id in USER_PENDING_TYPE:
         number_type = USER_PENDING_TYPE.pop(user_id)
         await process_number(update.effective_chat.id, number_type, text, context, user_id)
@@ -795,7 +1008,19 @@ def main():
     init_db()
     create_sample_redeem_codes()
     
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    # Network settings for Railway deployment
+    import httpx
+    import httpcore
+    
+    # Configure better timeout settings
+    request_kwargs = {
+        'connect_timeout': 30.0,
+        'read_timeout': 30.0,
+        'write_timeout': 30.0,
+        'pool_timeout': 30.0,
+    }
+    
+    application = ApplicationBuilder().token(BOT_TOKEN).read_timeout(30).write_timeout(30).connect_timeout(30).pool_timeout(30).build()
     
     # Handlers
     application.add_handler(CommandHandler("start", start_handler))
@@ -803,13 +1028,30 @@ def main():
     application.add_handler(CommandHandler("refer", refer_handler))
     application.add_handler(CommandHandler("redeem", redeem_handler))
     application.add_handler(CommandHandler("createredeem", create_redeem_handler))
+    application.add_handler(CommandHandler("broadcast", broadcast_handler))
+    application.add_handler(CommandHandler("stats", admin_stats_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_router))
     application.add_handler(CallbackQueryHandler(button_handler))
     
     print("🤖 BOT STARTED WITH CHANNEL JOIN SYSTEM!")
     print("📢 Users must join channels before using the bot")
+    print("🎯 Broadcast command added for admins")
+    print("📊 Admin stats command available")
     
-    application.run_polling(allowed_updates=["message", "callback_query"])
+    # Better error handling for polling
+    try:
+        application.run_polling(
+            allowed_updates=["message", "callback_query"],
+            poll_interval=1,
+            timeout=30,
+            drop_pending_updates=True
+        )
+    except Exception as e:
+        print(f"Bot polling error: {e}")
+        print("Restarting bot in 10 seconds...")
+        import time
+        time.sleep(10)
+        main()  # Restart bot
 
 if __name__ == "__main__":
     main()
