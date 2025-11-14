@@ -1,18 +1,32 @@
-import json
-import re
-import requests
-import sqlite3
-import uuid
-import random
-import string
-import os
-from datetime import datetime, timedelta
-from urllib.parse import quote_plus
-import asyncio
+print("🚀 Starting Bot... Checking dependencies...")
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+try:
+    import json
+    import re
+    import requests
+    import sqlite3
+    import uuid
+    import random
+    import string
+    import os
+    from datetime import datetime, timedelta
+    from urllib.parse import quote_plus
+    import asyncio
+
+    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+    from telegram.constants import ParseMode
+    from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+    
+    print("✅ All dependencies imported successfully!")
+except ImportError as e:
+    print(f"❌ Import Error: {e}")
+    print("📦 Installing missing dependencies...")
+    import subprocess
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "python-telegram-bot", "requests", "httpx"])
+    print("✅ Dependencies installed. Restarting...")
+    # Restart script after installing dependencies
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 # === CONFIG ===
 BOT_TOKEN = os.environ.get('BOT_TOKEN', "8381209855:AAHoiCG1mKwnNoZr3DNi-licXaNWqTsVS4w")
@@ -78,7 +92,7 @@ APIS = {
 
 # Points system
 POINTS_PER_SEARCH = 1
-POINTS_PER_REFERRAL = 5
+POINTS_PER_REFERRAL = 2
 DAILY_BONUS_POINTS = 1
 
 # Developer contact
@@ -93,11 +107,11 @@ JOINED_USERS = set()
 
 # Blocked numbers list
 BLOCKED_NUMBERS = {
-    "9798673946": "❌ This number is blocked from searching."
+    "9798673XXX": "❌ This number is blocked from searching."
 }
 
 # Admin IDs
-ADMIN_IDS = [7623647710, 7623647710]
+ADMIN_IDS = [7623647710, 6969001744]
 
 # Database setup
 def init_db():
@@ -143,7 +157,7 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print("Database initialized successfully!")
+    print("✅ Database initialized successfully!")
 
 def create_sample_redeem_codes():
     """Sample redeem codes create karta hai"""
@@ -170,13 +184,13 @@ def create_sample_redeem_codes():
                 INSERT INTO redeem_codes (code, points, created_by, created_date, is_active)
                 VALUES (?, ?, ?, ?, ?)
             ''', (code, points, admin_id, datetime.now().isoformat(), True))
-            print(f"✓ Created redeem code: {code} - {points} points")
+            print(f"✅ Created redeem code: {code} - {points} points")
         except Exception as e:
-            print(f"✗ Error creating code {code}: {e}")
+            print(f"❌ Error creating code {code}: {e}")
     
     conn.commit()
     conn.close()
-    print("✓ Sample redeem codes created successfully!")
+    print("✅ Sample redeem codes created successfully!")
 
 # User management functions
 def get_user(user_id):
@@ -1005,6 +1019,7 @@ async def refer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------- main ----------
 def main():
     print("🚀 Initializing Bot...")
+    print("📦 Checking dependencies...")
     
     # Initialize database
     init_db()
@@ -1035,6 +1050,7 @@ def main():
     print("🎯 Broadcast command: READY")
     print("📊 Admin stats: AVAILABLE")
     print("💎 Points system: RUNNING")
+    print("🌐 Bot is now live on Railway!")
     
     # Start polling with better error handling
     try:
