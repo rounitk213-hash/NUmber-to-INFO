@@ -15,7 +15,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # === CONFIG ===
-BOT_TOKEN = "8381209855:AAHoiCG1mKwnNoZr3DNi-licXaNWqTsVS4w"
+BOT_TOKEN = os.environ.get('BOT_TOKEN', "8381209855:AAHoiCG1mKwnNoZr3DNi-licXaNWqTsVS4w")
 
 # Channel Configuration
 CHANNELS = [
@@ -78,8 +78,8 @@ APIS = {
 
 # Points system
 POINTS_PER_SEARCH = 1
-POINTS_PER_REFERRAL = 5
-DAILY_BONUS_POINTS = 2
+POINTS_PER_REFERRAL = 2
+DAILY_BONUS_POINTS = 1
 
 # Developer contact
 DEVELOPER_CONTACT_URL = "https://t.me/shadowmonarchjii"  
@@ -93,23 +93,19 @@ JOINED_USERS = set()
 
 # Blocked numbers list
 BLOCKED_NUMBERS = {
-    "9798673946": "❌ This number is blocked from searching."
+    "9798673XXX": "❌ This number is blocked from searching."
 }
 
 # Admin IDs
-ADMIN_IDS = [7623647710]
+ADMIN_IDS = [7623647710, 6969001744]
 
 # Database setup
 def init_db():
-    if os.path.exists('bot_data.db'):
-        os.remove('bot_data.db')
-        print("Old database deleted")
-    
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('''
-        CREATE TABLE users (
+        CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             username TEXT,
             first_name TEXT,
@@ -123,7 +119,7 @@ def init_db():
     ''')
     
     cursor.execute('''
-        CREATE TABLE redeem_codes (
+        CREATE TABLE IF NOT EXISTS redeem_codes (
             code TEXT PRIMARY KEY,
             points INTEGER,
             created_by INTEGER,
@@ -135,7 +131,7 @@ def init_db():
     ''')
     
     cursor.execute('''
-        CREATE TABLE search_logs (
+        CREATE TABLE IF NOT EXISTS search_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             search_type TEXT,
@@ -147,12 +143,15 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print("New database created with correct schema!")
+    print("Database initialized successfully!")
 
 def create_sample_redeem_codes():
     """Sample redeem codes create karta hai"""
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
+    
+    # Pehle existing codes delete karo
+    cursor.execute('DELETE FROM redeem_codes')
     
     sample_codes = [
         ("WELCOME10", 10, ADMIN_IDS[0]),
@@ -181,7 +180,7 @@ def create_sample_redeem_codes():
 
 # User management functions
 def get_user(user_id):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
     user = cursor.fetchone()
@@ -202,7 +201,7 @@ def get_user(user_id):
     return None
 
 def create_user(user_id, username, first_name, referred_by=None):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT OR IGNORE INTO users (user_id, username, first_name, points, referred_by, join_date, channels_joined)
@@ -212,7 +211,7 @@ def create_user(user_id, username, first_name, referred_by=None):
     conn.close()
 
 def mark_channels_joined(user_id):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET channels_joined = TRUE WHERE user_id = ?', (user_id,))
     conn.commit()
@@ -220,14 +219,14 @@ def mark_channels_joined(user_id):
     JOINED_USERS.add(user_id)
 
 def update_points(user_id, points_change):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET points = points + ? WHERE user_id = ?', (points_change, user_id))
     conn.commit()
     conn.close()
 
 def increment_search_count(user_id):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET total_searches = total_searches + 1 WHERE user_id = ?', (user_id,))
     conn.commit()
@@ -244,7 +243,7 @@ def check_daily_bonus(user_id):
     
     today = datetime.now().date().isoformat()
     if user['last_bonus_date'] != today:
-        conn = sqlite3.connect('bot_data.db')
+        conn = sqlite3.connect('bot_data.db', check_same_thread=False)
         cursor = conn.cursor()
         cursor.execute('UPDATE users SET points = points + ?, last_bonus_date = ? WHERE user_id = ?', 
                       (DAILY_BONUS_POINTS, today, user_id))
@@ -255,7 +254,7 @@ def check_daily_bonus(user_id):
 
 # NEW: Get all users for broadcast
 def get_all_users():
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT user_id FROM users')
     users = [row[0] for row in cursor.fetchall()]
@@ -264,7 +263,7 @@ def get_all_users():
 
 # NEW: Get user stats for admin
 def get_user_stats():
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     
     cursor.execute('SELECT COUNT(*) FROM users')
@@ -295,7 +294,7 @@ def get_user_stats():
 # Redeem code functions
 def create_redeem_code(points, created_by):
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     try:
         cursor.execute('''
@@ -310,7 +309,7 @@ def create_redeem_code(points, created_by):
         conn.close()
 
 def redeem_code(code, user_id):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     
     try:
@@ -332,7 +331,7 @@ def redeem_code(code, user_id):
         conn.close()
 
 def get_all_redeem_codes():
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT code, points, created_by, used_by FROM redeem_codes WHERE is_active = TRUE ORDER BY points DESC')
     codes = cursor.fetchall()
@@ -341,7 +340,7 @@ def get_all_redeem_codes():
 
 # Logger functions
 def log_search(user_id, search_type, query, result):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO search_logs (user_id, search_type, query, result, timestamp)
@@ -738,7 +737,7 @@ async def admin_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     stats_text += f"📝 <b>Search Logs:</b> {stats['total_logs']}\n\n"
     
     # Active users (last 7 days)
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     cursor = conn.cursor()
     week_ago = (datetime.now() - timedelta(days=7)).isoformat()
     cursor.execute('SELECT COUNT(DISTINCT user_id) FROM search_logs WHERE timestamp > ?', (week_ago,))
@@ -764,7 +763,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if referrer_id != user.id:
                 user_data = get_user(user.id)
                 if user_data and not user_data['referred_by']:
-                    conn = sqlite3.connect('bot_data.db')
+                    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
                     cursor = conn.cursor()
                     cursor.execute('UPDATE users SET referred_by = ? WHERE user_id = ?', (referrer_id, user.id))
                     cursor.execute('UPDATE users SET points = points + ? WHERE user_id = ?', (POINTS_PER_REFERRAL, referrer_id))
@@ -1005,22 +1004,20 @@ async def refer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- main ----------
 def main():
+    print("🚀 Initializing Bot...")
+    
+    # Initialize database
     init_db()
     create_sample_redeem_codes()
     
-    # Network settings for Railway deployment
-    import httpx
-    import httpcore
-    
-    # Configure better timeout settings
-    request_kwargs = {
-        'connect_timeout': 30.0,
-        'read_timeout': 30.0,
-        'write_timeout': 30.0,
-        'pool_timeout': 30.0,
-    }
-    
-    application = ApplicationBuilder().token(BOT_TOKEN).read_timeout(30).write_timeout(30).connect_timeout(30).pool_timeout(30).build()
+    # Create application with better settings for Railway
+    application = ApplicationBuilder()\
+        .token(BOT_TOKEN)\
+        .read_timeout(30)\
+        .write_timeout(30)\
+        .connect_timeout(30)\
+        .pool_timeout(30)\
+        .build()
     
     # Handlers
     application.add_handler(CommandHandler("start", start_handler))
@@ -1033,12 +1030,13 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_router))
     application.add_handler(CallbackQueryHandler(button_handler))
     
-    print("🤖 BOT STARTED WITH CHANNEL JOIN SYSTEM!")
-    print("📢 Users must join channels before using the bot")
-    print("🎯 Broadcast command added for admins")
-    print("📊 Admin stats command available")
+    print("🤖 BOT STARTED SUCCESSFULLY!")
+    print("📢 Channel join system: ACTIVE")
+    print("🎯 Broadcast command: READY")
+    print("📊 Admin stats: AVAILABLE")
+    print("💎 Points system: RUNNING")
     
-    # Better error handling for polling
+    # Start polling with better error handling
     try:
         application.run_polling(
             allowed_updates=["message", "callback_query"],
@@ -1047,8 +1045,8 @@ def main():
             drop_pending_updates=True
         )
     except Exception as e:
-        print(f"Bot polling error: {e}")
-        print("Restarting bot in 10 seconds...")
+        print(f"❌ Bot polling error: {e}")
+        print("🔄 Restarting bot in 10 seconds...")
         import time
         time.sleep(10)
         main()  # Restart bot
