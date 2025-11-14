@@ -78,7 +78,7 @@ APIS = {
 
 # Points system
 POINTS_PER_SEARCH = 1
-POINTS_PER_REFERRAL = 2
+POINTS_PER_REFERRAL = 5
 DAILY_BONUS_POINTS = 1
 
 # Developer contact
@@ -93,11 +93,11 @@ JOINED_USERS = set()
 
 # Blocked numbers list
 BLOCKED_NUMBERS = {
-    "9798673XXX": "❌ This number is blocked from searching."
+    "9798673946": "❌ This number is blocked from searching."
 }
 
 # Admin IDs
-ADMIN_IDS = [7623647710, 6969001744]
+ADMIN_IDS = [7623647710, 7623647710]
 
 # Database setup
 def init_db():
